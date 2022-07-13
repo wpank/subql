@@ -1,0 +1,51 @@
+type Nominator @entity {
+  id: ID!
+  stash: String
+  currentValidators: [ValidatorJSON]
+  submittedIn: BigInt
+  bond: BigInt
+}
+
+type NominatorJSON @jsonField {
+  stash: String
+}
+
+type Validator @entity{
+  id: ID!
+  stash: String
+  selfStake: BigInt
+  activeStake: BigInt
+  inactiveStake: BigInt
+  totalStake: BigInt
+  # A list of nominators whose stake is actively on the given validator
+  activeNominators: [NominatorJSON]
+  # A list of nominators whose stake is not actively on the given validator
+  inactiveNominators: [NominatorJSON]
+  # A list of all nomiantors, both active and inactive
+  allNominators: [NominatorJSON]
+  nominations: [ValidatorNomination] @derivedFrom(field: "validator")
+}
+
+type ValidatorJSON @jsonField  {
+  stash: String
+}
+
+type ValidatorNomination @entity {
+  id: ID!
+  extrinsicId: String
+  blockNumber: BigInt
+  totalValidatorsNominated: BigInt
+  bond: BigInt
+  nominator: Nominator
+  validator: Validator
+  nomination: Nomination
+}
+
+type Nomination @entity {
+  id: ID!
+  nominator: Nominator
+  blockNumber: BigInt
+  validatorNominations: [ValidatorNomination!] @derivedFrom(field: "nomination")
+}
+
+
