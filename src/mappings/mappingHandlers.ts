@@ -32,6 +32,7 @@ export const updateRemovedValidators = async(nominator, nominatorTargets) => {
         for (const val of removedValidators) {
             const validator = await Validator.get(val.toString())
             const allNominators = validator.allNominators
+            const inactiveNominators = validator.inactiveNominators
             if (allNominators){
                 const index = allNominators.indexOf(nominator.stash)
                 if (index > -1){
@@ -40,8 +41,91 @@ export const updateRemovedValidators = async(nominator, nominatorTargets) => {
                     await validator.save();
                 }
             }
+            if (inactiveNominators){
+                const index = inactiveNominators.indexOf(nominator.stash)
+                if (index > -1){
+                    inactiveNominators.splice(index, 1);
+                    validator.inactiveNominators = inactiveNominators
+                    await validator.save();
+                }
+            }
         }
     }
+}
+
+export const createOrUpdateNominator = async(nominatorStash, nominatorTargets, submittedIn, bond) => {
+    let nominator = await Nominator.get(nominatorStash)
+    if (!nominator) {
+        nominator = new Nominator(nominatorStash)
+        nominator.stash = nominatorStash
+    }
+
+    await updateRemovedValidators(nominator, nominatorTargets)
+
+    nominator.currentValidators = nominatorTargets
+    nominator.submittedIn = submittedIn
+    nominator.bond = bond
+    await nominator.save()
+}
+
+export const createNomination = async(extrinsicHash, nominatorStash, blockNumber) => {
+    let nomination = new Nomination(extrinsicHash)
+    // @ts-ignore
+    nomination.nominatorId = nominatorStash.toString();
+    nomination.blockNumber = blockNumber;
+    await nomination.save()
+}
+
+export const updateValidator = async(validatorStash, currentEra, nominatorStash) => {
+    // Get Era Exposure
+    const erasStakers = (await api.query.staking.erasStakers(currentEra, validatorStash));
+    // @ts-ignore
+    const {total, own, others} = erasStakers
+    const activeNominators = others.map((nominator)=> {
+        return nominator.who.toString()
+    })
+
+    let validator = await Validator.get(validatorStash);
+    if (!validator) {
+        validator = new Validator(validatorStash);
+        validator.stash = validatorStash;
+        validator.allNominators = [nominatorStash]
+    } else {
+        // The validator was included in a nominators nomination
+        //  add the nominator to the list of all nominators if it isn't already there
+        const index = validator.allNominators.indexOf(nominatorStash)
+        if (index == -1){
+            const allNominators = validator.allNominators
+            allNominators.push(nominatorStash)
+            validator.allNominators = allNominators
+        }
+    }
+
+    const inactiveNominators = validator.allNominators.filter(x => !activeNominators.includes(x))
+    validator.inactiveNominators = inactiveNominators
+
+    let totalStake = BigInt(0)
+    for (const nom of validator.allNominators){
+        const nominator = await  Nominator.get(nom.toString())
+        if (nominator && nominator.bond > 0){
+            totalStake += nominator.bond
+        }
+    }
+
+    let inactiveStake = BigInt(0)
+    for (const nom of validator.inactiveNominators){
+        const nominator = await Nominator.get(nom.toString())
+        if (nominator && nominator.bond > 0){
+            inactiveStake += nominator.bond
+        }
+    }
+
+    validator.activeStake = total
+    validator.selfStake = own
+    validator.inactiveStake = inactiveStake
+    validator.activeNominators = activeNominators
+
+    await validator.save()
 }
 
 export async function handleStakingNominate(extrinsicHash, controller, blockNumber, args): Promise<void> {
@@ -52,38 +136,29 @@ export async function handleStakingNominate(extrinsicHash, controller, blockNumb
 
     const currentEra = (await api.query.staking.currentEra()).toString();
 
-
     const { targets } = args;
     const nominatorTargets = targets.map((target)=>{return target['Id'] ? target['Id'] : target})
 
+    // let nominator = await Nominator.get(nominatorStash)
+    // if (!nominator) {
+    //     nominator = new Nominator(nominatorStash)
+    //     nominator.stash = nominatorStash
+    // }
+    //
+    // await updateRemovedValidators(nominator, nominatorTargets)
+    //
+    // nominator.currentValidators = nominatorTargets
+    // nominator.submittedIn = currentEra
+    // nominator.bond = nominatorBond
+    // await nominator.save()
+    await createOrUpdateNominator(nominatorStash, nominatorTargets, currentEra, nominatorBond)
 
-    // const nominatorQuery = (await api.query.staking.nominators(nominatorStash)).toHuman();
+    await createNomination(extrinsicHash, nominatorStash, blockNumber)
+    // let nomination = new Nomination(extrinsicHash)
     // // @ts-ignore
-    // const { targets: nominatorTargets, submittedIn } = nominatorQuery
-    // logger.info(`active era: ${currentEra} submittedIn: ${submittedIn}`)
-    // logger.info(`nominator targets (queried from chain)`)
-    // logger.info(JSON.stringify(nominatorTargets))
-
-    let nominator = await Nominator.get(nominatorStash)
-    if (!nominator) {
-        nominator = new Nominator(nominatorStash)
-        nominator.stash = nominatorStash
-    }
-
-    await updateRemovedValidators(nominator, nominatorTargets)
-
-
-
-    nominator.currentValidators = nominatorTargets
-    nominator.submittedIn = currentEra
-    nominator.bond = nominatorBond
-    await nominator.save()
-
-    let nomination = new Nomination(extrinsicHash)
-    // @ts-ignore
-    nomination.nominatorId = nominatorStash.toString();
-    nomination.blockNumber = blockNumber;
-    await nomination.save()
+    // nomination.nominatorId = nominatorStash.toString();
+    // nomination.blockNumber = blockNumber;
+    // await nomination.save()
 
     // const nominators = await api.query.staking.nominators.entries();
     // logger.info(JSON.stringify(nominators))
@@ -95,13 +170,13 @@ export async function handleStakingNominate(extrinsicHash, controller, blockNumb
         const validatorStash = target["Id"] ? target['Id'] : target
 
         logger.info(`validator stash: ${validatorStash} currentEra: ${currentEra}`)
-        const erasStakers = (await api.query.staking.erasStakers(currentEra, validatorStash));
-        logger.info(JSON.stringify(erasStakers))
-        // @ts-ignore
-        const {total, own, others} = erasStakers
-        const activeNominators = others.map((nominator)=> {
-            return nominator.who.toString()
-        })
+        // const erasStakers = (await api.query.staking.erasStakers(currentEra, validatorStash));
+        // logger.info(JSON.stringify(erasStakers))
+        // // @ts-ignore
+        // const {total, own, others} = erasStakers
+        // const activeNominators = others.map((nominator)=> {
+        //     return nominator.who.toString()
+        // })
         // logger.info(`total`)
         // logger.info(JSON.stringify(total))
         // logger.info(`own`)
@@ -143,38 +218,40 @@ export async function handleStakingNominate(extrinsicHash, controller, blockNumb
         //     totalInactiveStake += BigInt(nominator.bonded);
         // });
 
+
+
+        // let validator = await Validator.get(validatorStash);
+        // if (!validator) {
+        //     validator = new Validator(validatorStash);
+        //     validator.stash = validatorStash;
+        //     validator.activeStake = total
+        //     validator.selfStake = own
+        //     // validator.inactiveStake = totalInactiveStake
+        //     validator.activeNominators = activeNominators
+        //     validator.allNominators = [nominatorStash]
+        //     await validator.save()
+        // } else {
+        //     const index = validator.allNominators.indexOf(nominatorStash)
+        //     if (index == -1){
+        //         // logger.info(`found the index of the nominator`)
+        //         const allNominators = validator.allNominators
+        //         allNominators.push(nominatorStash)
+        //         validator.allNominators = allNominators
+        //         await validator.save()
+        //     }
+        // }
+        await updateValidator(validatorStash, currentEra, nominatorStash)
+
         const validatorNominationId = `${nominatorStash}-${validatorStash}-${blockNumber}`
-
-        let validator = await Validator.get(validatorStash);
-        if (!validator) {
-            validator = new Validator(validatorStash);
-            validator.stash = validatorStash;
-            validator.activeStake = total
-            validator.selfStake = own
-            // validator.inactiveStake = totalInactiveStake
-            validator.activeNominators = activeNominators
-            validator.allNominators = [nominatorStash]
-            await validator.save()
-        } else {
-            const index = validator.allNominators.indexOf(nominatorStash)
-            if (index == -1){
-                // logger.info(`found the index of the nominator`)
-                const allNominators = validator.allNominators
-                allNominators.push(nominatorStash)
-                validator.allNominators = allNominators
-                await validator.save()
-            }
-        }
-
-        await createValidatorNomination(validatorNominationId, blockNumber, nominatorStash, validatorStash, extrinsicHash)
+        await createValidatorNomination(validatorNominationId, blockNumber, nominatorStash, validatorStash, extrinsicHash, nominatorBond)
 
 
-        return validator
+        // return validator
     }));
     // logger.info(JSON.stringify(nominations))
 }
 
-export  const createValidatorNomination = async(id, blockNumber, nominatorStash, validatorStash, extrinsicHash) => {
+export  const createValidatorNomination = async(id, blockNumber, nominatorStash, validatorStash, extrinsicHash, bond) => {
     let validatorNomination = await ValidatorNomination.get(id)
     if (!validatorNomination) {
         validatorNomination = new ValidatorNomination(id);
