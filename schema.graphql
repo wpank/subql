@@ -1,3 +1,9 @@
+type Account @entity {
+  id: ID!
+  address: String
+}
+
+
 type Nominator @entity {
   id: ID!
   stash: String
@@ -8,6 +14,7 @@ type Nominator @entity {
 
 type NominatorJSON @jsonField {
   stash: String
+  bond: BigInt
 }
 
 type Validator @entity{
