@@ -74,8 +74,19 @@ const updateRemovedValidators = async(nominator, nominatorTargets) => {
             if (allNominators){
                 const index = allNominators.map(nominator => {return nominator.stash}).indexOf(nominator.stash)
                 if (index > -1){
+                    // Remove nominator from list of `allNomiantors`
                     allNominators.splice(index, 1);
                     validator.allNominators = allNominators
+
+                    // Update Total Stake Amounts
+                    let totalStake = BigInt(0)
+                    for (const nom of allNominators){
+                        // const nominator = await  Nominator.get(nom.stash.toString())
+                        if (nom && BigInt(nom.bond) > 0){
+                            totalStake += BigInt(nom.bond)
+                        }
+                    }
+                    validator.totalStake = totalStake
                 }
             }
             if (activeNominators){
@@ -88,7 +99,19 @@ const updateRemovedValidators = async(nominator, nominatorTargets) => {
             if (inactiveNominators){
                 const index = inactiveNominators.map(nominator => {return nominator.stash}).indexOf(nominator.stash)
                 if (index > -1){
+                    // Remove nominator from list of `inactiveValidators`
                     inactiveNominators.splice(index, 1);
+                    validator.inactiveNominators = inactiveNominators
+
+                    // Update inactive stake amounts
+                    let inactiveStake = BigInt(0)
+                    for (const nom of inactiveNominators){
+                        // const nominator = await Nominator.get(nom.stash.toString())
+                        if (nom && BigInt(nom.bond) > 0){
+                            inactiveStake += BigInt(nom.bond)
+                        }
+                    }
+                    validator.inactiveStake = inactiveStake
                 }
             }
             await validator.save();
@@ -130,17 +153,17 @@ const updateValidator = async(validatorStash, currentEra, nominatorStash, nomina
     // Total stake is the sum of stake from all nominators, active and inactive
     let totalStake = BigInt(0)
     for (const nom of allNominators){
-        const nominator = await  Nominator.get(nom.stash.toString())
-        if (nominator && nominator.bond > 0){
-            totalStake += nominator.bond
+        // const nominator = await  Nominator.get(nom.stash.toString())
+        if (nom && BigInt(nom.bond) > 0){
+            totalStake += BigInt(nom.bond)
         }
     }
 
     let inactiveStake = BigInt(0)
     for (const nom of inactiveNominators){
-        const nominator = await Nominator.get(nom.stash.toString())
-        if (nominator && nominator.bond > 0){
-            inactiveStake += nominator.bond
+        // const nominator = await Nominator.get(nom.stash.toString())
+        if (nom && BigInt(nom.bond) > 0){
+            inactiveStake += BigInt(nom.bond)
         }
     }
 
@@ -175,6 +198,7 @@ const createValidatorNomination = async(id, blockNumber, nominatorStash, validat
         validatorNomination.validatorId = validatorStash
         //@ts-ignore
         validatorNomination.nominationId = extrinsicHash
+        validatorNomination.bond = bond
         await validatorNomination.save()
     }
 }

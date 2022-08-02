@@ -16,7 +16,7 @@ services:
       retries: 5
 
   subquery-node:
-    image: onfinality/subql-node:v1.5.1
+    image: onfinality/subql-node:latest
     depends_on:
       "postgres":
         condition: service_healthy
@@ -35,9 +35,11 @@ services:
       - --log-level=debug
       - --timeout=180
       - --batch-size=500
-      - --force-clean
+      - --scale-batch-size=true
+#      - --force-clean
+      - --workers=12
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://subquery-node:3000/ready"]
+      test: ["CMD", "curl", "-f", "http://subquery-node:3000/health"]
       interval: 3s
       timeout: 15s
       retries: 10
