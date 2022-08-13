@@ -1,5 +1,7 @@
 import { SubstrateExtrinsic } from '@subql/types';
 import {Nomination, Nominator, Validator, ValidatorNomination} from "../types";
+const { decodeAddress, encodeAddress } = require('@polkadot/keyring');
+const { hexToU8a, isHex } = require('@polkadot/util');
 
 // Process a staking.nominate transaction
 export async function handleNominate(extrinsic: SubstrateExtrinsic): Promise<void> {
@@ -13,7 +15,10 @@ export async function handleNominate(extrinsic: SubstrateExtrinsic): Promise<voi
     const { signer, method: {args}} = extrinsic.extrinsic.toHuman();
     const { targets } = args;
     const controller = signer['Id'] ? signer['Id'] : signer
-    const nominatorTargets = targets.map((target)=>{return target['Id'] ? target['Id'] : target})
+    const nominatorTargets = targets.map((target)=>{
+        const address = target['Id'] ? target['Id'] : target
+        if (isValidAddressPolkadotAddress(address)) return
+    })
 
     // On Chain Queries
     //     get the stash from the controller, the bonded amount, and the current era
@@ -227,3 +232,17 @@ const ensureNominator = async(stash: string): Promise<void> => {
         await new Nominator(stash).save();
     }
 }
+
+const isValidAddressPolkadotAddress = (address) => {
+    try {
+        encodeAddress(
+            isHex(address)
+                ? hexToU8a(address)
+                : decodeAddress(address)
+        );
+
+        return true;
+    } catch (error) {
+        return false;
+    }
+};
