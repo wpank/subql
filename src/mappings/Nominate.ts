@@ -17,7 +17,7 @@ export async function handleNominate(extrinsic: SubstrateExtrinsic): Promise<voi
     const controller = signer['Id'] ? signer['Id'] : signer
     const nominatorTargets = targets.map((target)=>{
         const address = target['Id'] ? target['Id'] : target
-        if (isValidAddressPolkadotAddress(address)) return
+        if (isValidAddressPolkadotAddress(address)) return address
     })
 
     // On Chain Queries
