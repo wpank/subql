@@ -240,13 +240,7 @@ const isValidAddressPolkadotAddress = (address) => {
                 ? hexToU8a(address)
                 : decodeAddress(address)
         );
-        if (address.length ==48) {
-            return true;
-        } else {
-            return false;
-        }
-
-
+        return address.length > 40
     } catch (error) {
         return false;
     }
