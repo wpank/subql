@@ -121,8 +121,17 @@ const updateRemovedValidators = async(nominator, nominatorTargets) => {
 
 // Update a Validator's list of active and inactive Nominators, as well as totals for active/inactive stake amounts
 const updateValidator = async(validatorStash, currentEra, nominatorStash, nominatorBond) => {
+
     // Get Era Exposure
-    const erasStakers = (await api.query.staking.erasStakers(currentEra, validatorStash));
+    let erasStakers
+    // Prior to runtime 1050, `staking.Stakers` was the storage item
+    if (api.query.staking.stakers){
+        erasStakers = (await api.query.staking.stakers(validatorStash));
+    }
+    if  (api.query.staking.erasStakers){
+        erasStakers = (await api.query.staking.erasStakers(currentEra, validatorStash));
+    }
+
     // @ts-ignore
     const {total, own, others} = erasStakers
     const activeNominators = others.map((nominator)=> {
