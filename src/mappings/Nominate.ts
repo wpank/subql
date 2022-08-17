@@ -15,24 +15,34 @@ export async function handleNominate(extrinsic: SubstrateExtrinsic): Promise<voi
     const { signer, method: {args}} = extrinsic.extrinsic.toHuman();
     const { targets } = args;
     const controller = signer['Id'] ? signer['Id'] : signer
-    const nominatorTargets = targets.map((target)=>{
+    const nominatorTargets = (await Promise.all(targets.map(async (target) => {
         const address = target['Id'] ? target['Id'] : target
-        if (isValidAddressPolkadotAddress(address)) return address
-    })
+        if (isValidAddressPolkadotAddress(address)) {
+            return address
+        } else {
+            // The address might be an index
+        }
+    }))).filter(n=>n)
+
+    if (nominatorTargets.length == 0) return;
 
     // On Chain Queries
     //     get the stash from the controller, the bonded amount, and the current era
-    const ledgerQuery = (await api.query.staking.ledger(controller)).toJSON()
+    const query = await api.queryMulti([
+        [api.query.staking.ledger, controller],
+        api.query.staking.currentEra
+    ])
+    const ledgerQuery = query[0].toJSON()
     const nominatorStash = ledgerQuery['stash']
     const nominatorBond = BigInt(ledgerQuery['total'])
-    const currentEra = (await api.query.staking.currentEra()).toString();
+    const currentEra = query[1].toString();
 
     // Update the nominators bond and current nominations and create a `Nomination` record
     await updateNominator(nominatorStash, nominatorTargets, currentEra, nominatorBond)
     await createNomination(extrinsicHash, nominatorStash, blockNumber)
 
-    const nominations = await Promise.all(targets.map(async (target) => {
-        const validatorStash = target["Id"] ? target['Id'] : target
+    const nominations = await Promise.all(nominatorTargets.map(async (validatorStash) => {
+        if (!validatorStash) return
         await updateValidator(validatorStash, currentEra, nominatorStash, nominatorBond)
         const validatorNominationId = `${nominatorStash}-${validatorStash}-${blockNumber}`
         await createValidatorNomination(validatorNominationId, blockNumber, nominatorStash, validatorStash, extrinsicHash, nominatorBond)
